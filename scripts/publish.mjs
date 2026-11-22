@@ -41,7 +41,7 @@ function pack() {
 async function publish() {
   const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
   const version = releaseVersion(pkg.version, process.env.GITHUB_RUN_NUMBER);
-  const file = 'artifact/package.tgz';
+  const file = './artifact/package.tgz';
   const integrity = 'sha512-' + createHash('sha512').update(readFileSync(file)).digest('base64');
   const response = await fetch('https://registry.npmjs.org/' + encodeURIComponent(pkg.name));
   if (!response.ok && response.status !== 404) throw Error('Registry metadata request failed: ' + response.status);

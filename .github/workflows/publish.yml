@@ -27,6 +27,7 @@ jobs:
         run: sudo install -d -m 0700 -o "$(id -u)" -g "$(id -g)" /run/pappai/private
       - run: npm test
       - run: node scripts/publish.mjs pack
+      - run: npm publish ./artifact/package.tgz --dry-run --ignore-scripts --access public
       - name: Exercise the packed runner on Linux with a pinned Codex CLI
         env:
           PAPPAI_REVISION: d92537833bd53acc53f9f14a9bc5b7760721d9a6
