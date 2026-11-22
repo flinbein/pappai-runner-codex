@@ -2,11 +2,11 @@
   "run": {
     "type": "codex",
     "settings": {
-      "developerInstructions": "Выполни поручение из data.input. Ответь на языке пользователя.",
+      "developerInstructions": "Complete the task in data.input. Reply in the user's language.",
       "features": {
         "agent.execute": {
           "type": "method",
-          "description": "Выполнить текстовое поручение",
+          "description": "Complete a text assignment",
           "version": "1",
           "schema": {
             "input": {

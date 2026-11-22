@@ -1,3 +1,5 @@
-# Работа над раннером Codex
+# Working on the Codex runner
 
-Раннер связывает контроллер pappai с Codex CLI через app-server. Контракт установки, настройки и режимов описан в [README](README.md). Поддерживайте документацию в актуальном состоянии при изменении поведения. Изменения IPC проверяйте с контроллером pappai. Для локальных тестов используйте отдельные каталоги состояния и тестовую авторизацию.
+The runner connects the pappai controller to the Codex CLI through app-server. The [README](README.md) describes installation, configuration, and executor modes. Keep it current when behavior changes. Verify IPC changes against the pappai controller. Use separate state directories and test credentials for local tests.
+
+Write documentation, examples, and user-facing help in English. Internal notes under `.dev/` may be written in Russian.

@@ -84,7 +84,8 @@ export async function resolveHttpMcp(config,job) {
   const mcp=job.settings?.mcp;
   if (!mcp || (job.sandbox!==null && job.sandbox?.network!==true)) return denied;
   keys(mcp,['profile','servers']);
-  const selected=mcp.profile ?? [];
+  // Older controllers omit this grant. Ignore denied selections before reading profile storage.
+  const selected=job.profileMcpNetwork===true ? (mcp.profile ?? []) : [];
   if (!Array.isArray(selected) || selected.length>64) throw Error('Invalid MCP profile selection');
   const local=mcp.servers ?? {};
   if (!local || typeof local!=='object' || Array.isArray(local) || Object.keys(local).length+selected.length>64) throw Error('Invalid MCP servers');

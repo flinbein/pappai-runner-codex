@@ -1,14 +1,14 @@
 # @flinbein/pappai-runner-codex
 
-Внешний раннер для [pappai](https://github.com/flinbein/pappai). Он передаёт события и вызовы методов в Codex CLI через `app-server`. Одноразовый исполнитель открывает временный thread на одно задание. Постоянный исполнитель последовательно выполняет ходы в одном thread и восстанавливает историю после остановки процесса.
+This external runner delivers [pappai](https://github.com/flinbein/pappai) events and method calls to the Codex CLI through `app-server`. A one-shot executor creates an ephemeral thread for a single assignment. A persistent executor processes turns sequentially in one thread and resumes it after a process restart.
 
-## Установка
+## Installation
 
-Нужны контроллер pappai с поддержкой PROFILE и административной конфигурации раннера, Linux x86_64 с рабочим bubblewrap, Node.js 24.2+ и нативная musl-сборка Codex CLI. Совместимость проверяется с `0.170.0`. Установите CLI отдельно на постоянный том. Путь `codexExecutablePath` должен вести к самому исполняемому файлу.
+The runner requires a pappai controller that supports PROFILE nodes and administrator-supplied runner configuration, Linux x86_64 with working bubblewrap, Node.js 24.2+, and the native musl distribution of the Codex CLI. Compatibility tests use Codex `0.170.0`. Install the CLI separately on a persistent volume. Set `codexExecutablePath` to the executable itself.
 
-1. Смонтируйте постоянный приватный том в `/run/pappai/private`. Выделите в нём каталоги `profiles` и `state` с правами `0700` владельца процесса pappai. Храните код раннера и CLI в каталогах, доступных для записи только администратору.
-2. Установите пакет, например `npm install --prefix /run/pappai/private/runners --omit=dev @flinbein/pappai-runner-codex`.
-3. Через `call` вызовите `$.runners.add` на workspace (`node: "~"`) с приведёнными ниже данными. При регистрации также можно передать поле `settingsSchema` с содержимым [схемы настроек APP](examples/settings-schema.json).
+1. Mount a persistent private volume at `/run/pappai/private`. Create `profiles` and `state` directories there, owned by the pappai process user with mode `0700`. Only the administrator should have write access to the runner code and CLI installation.
+2. Install the package, for example with `npm install --prefix /run/pappai/private/runners --omit=dev @flinbein/pappai-runner-codex`.
+3. Use `call` to invoke `$.runners.add` on the workspace (`node: "~"`) with the following arguments. To have the controller validate APP settings, supply the [settings schema](examples/settings-schema.json) in the `settingsSchema` field when registering the runner.
 
 ```json
 {
@@ -22,29 +22,31 @@
 }
 ```
 
-## Первый вызов
+## First call
 
-1. На workspace или TEAM вызовите `$.profile.create` с именем и пермитами. Сохраните полученный ID.
-2. Подготовьте `auth.json` штатным входом в Codex CLI и поместите файл в доступный вызывающему каталог. На ноде PROFILE вызовите `codex.setup` с `{"authFile":"/tmp/codex-auth.json"}`. Контроллер читает обычный файл от имени вызывающего. `codex.status({})` возвращает `{"configured":true}` после импорта. `codex.remove({})` удаляет сохранённое подключение.
-3. На workspace или TEAM вызовите `$.app.create` с `name`, `profile`, `permissions` и `source: {"manifest": …}`. В качестве манифеста используйте [одноразовый](examples/oneShot.json) или [постоянный](examples/persistent.json) пример.
-4. На PROFILE вызовите `$.profile.scope.set({"scope":["ID_APP"]})` с настоящим ID созданной APP, затем `$.profile.enable({})`. На APP вызовите `$.app.start({})`.
-5. Вызовите `agent.execute` на APP с `{"input":"Переведи на русский: the build passed"}`. Декларация метода в примере требует строку в ответе. Для своего метода можно указать другую выходную JSON Schema. Раннер проверяет результат перед ответом.
+1. Call `$.profile.create` on the workspace or a TEAM with a name and permissions. Save the returned ID.
+2. Sign in with the Codex CLI and place the resulting `auth.json` in a directory the caller can read. Call `codex.setup` on the PROFILE with `{"authFile":"/tmp/codex-auth.json"}`. The controller reads the regular file as the caller. After import, `codex.status({})` returns `{"configured":true}`. Use `codex.remove({})` to remove the stored connection.
+3. Call `$.app.create` on the workspace or a TEAM with `name`, `profile`, `permissions` and `source.manifest`. Use the [one-shot](examples/oneShot.json) or [persistent](examples/persistent.json) manifest.
+4. Call `$.profile.scope.set({"scope":["APP_ID"]})` on the PROFILE using the new APP's ID, then call `$.profile.enable({})`. Call `$.app.start({})` on the APP.
+5. Call `agent.execute` on the APP with `{"input":"Translate into Russian: the build passed"}`. The example method declares a string result. You can declare a different output JSON Schema for your own method. The runner validates the result before replying.
 
-Первые назначения проходят проверку доступа до отправки события в модель. При запуске учётные данные берутся из явно привязанного профиля. Для разных APP с одним профилем создаются раздельные истории. Значение `idleTimeoutMs` постоянной APP позволяет освободить процесс между заданиями.
+The controller checks assignment access before an event reaches the model. Each executor obtains model credentials from its assigned profile at startup. APPs that share a profile keep separate conversation histories. Set `idleTimeoutMs` on a persistent APP to release its process between assignments.
 
-Поддерживаются API-ключ и импортированная авторизация подписки ChatGPT. Один хост раннера владеет каталогом профилей и координирует обновление токена для всех своих APP. У каждого исполнителя только краткоживущая авторизация подписки. Не подключайте одну копию хранилища профилей к нескольким хостам раннера одновременно. Проверка ротации использует настоящий Codex и локальный тестовый OAuth-сервер.
+The runner supports API keys and imported ChatGPT subscription credentials. A single runner host owns the profiles directory and coordinates token refresh across its APPs. Each subscription worker receives only short-lived credentials. Give each runner host exclusive use of its profile storage. The rotation test uses the native Codex CLI and a local OAuth test server.
 
-У постоянной APP можно дополнительно объявить методы `agent.getHistory` и `agent.interrupt` в `features`. История возвращает сообщения пользователя и финальные реплики модели с курсором продолжения. Прерывание адресуется текущему активному ходу и требует обычного разрешения на метод. При отсутствии активного хода контроллер возвращает ошибку. Оба метода работают без вызова модели.
+A persistent APP can also declare `agent.getHistory` and `agent.interrupt` under `features`. History returns user messages and final assistant replies with a pagination cursor. Interrupt targets the active turn and requires permission to call the method. If no turn is active, the controller returns an error. Both methods run without a model call.
 
-## Граница первой версии
+## Executor permissions
 
-Исполнитель работает в изолированном каталоге. Подключение к модели является служебным каналом. Для операций в pappai модель получает инструменты `pappai_dir`, `pappai_help`, `pappai_call` и `pappai_publish`. Контроллер выполняет их от имени конкретного исполнителя с учётом PROFILE. Shell, файловые инструменты Codex и пользовательские настройки из рабочего каталога отключены. Поля `run.settings` выбирают модель, усилие рассуждения и инструкцию. Административный путь к CLI и хранилищам задают при регистрации раннера.
+The executor runs in an isolated directory. Its connection to the model is a service channel. For workspace operations, the model receives the `pappai_dir`, `pappai_help`, `pappai_call` and `pappai_publish` tools. The controller authorizes calls as the assigned APP using its effective permissions. The PROFILE supplies the model credentials, and its scope controls which APPs may use them.
+
+Shell, native Codex file tools and user configuration from the working directory are disabled. Use `run.settings` to select the model, reasoning effort and developer instructions. The administrator sets the CLI and storage paths when registering the runner.
 
 ## HTTP MCP
 
-На PROFILE вызовите `codex.mcp.set({"name":"tasks","url":"https://tasks.example.org/mcp","bearerFile":"/tmp/tasks-token"})`. Поле `bearerFile` необязательно, файл содержит один bearer-токен. Каждая запись сохраняется целиком. Повторное сохранение без `bearerFile` снимает токен. `codex.mcp.get({})` возвращает URL и признак авторизации. `codex.mcp.delete({"name":"tasks"})` удаляет запись. Изменения применяются при следующем запуске исполнителя. Для немедленного отзыва отключите профиль.
+To configure a shared server, call `codex.mcp.set({"name":"tasks","url":"https://tasks.example.org/mcp","bearerFile":"/tmp/tasks-token"})` on the PROFILE. The optional file contains one bearer token. Each call replaces the entire entry. Omitting `bearerFile` removes any previous token. `codex.mcp.get({})` lists URLs and indicates which entries have credentials. `codex.mcp.delete({"name":"tasks"})` deletes an entry. Changes apply on the next executor launch. Disable the profile to revoke access immediately.
 
-В `run.settings` конкретной APP укажите выбранные серверы. Например, конфигурация ниже подключает общие задачи с авторизацией PROFILE и личный HTTP-сервер APP с открытым доступом. Имена в двух списках должны различаться.
+In the APP's `run.settings`, select shared servers by name under `mcp.profile`, and declare APP-owned HTTP endpoints under `mcp.servers`. This example selects the PROFILE's authenticated task service and an APP-local calendar endpoint that accepts unauthenticated requests.
 
 ```json
 {
@@ -55,12 +57,19 @@
 }
 ```
 
-Исполнителю требуется эффективное право `network:true`. При запрете сети раннер убирает HTTP MCP до подключения. Для внешних адресов требуется HTTPS, для локального теста допустим HTTP на loopback. Поля команды, параметры авторизации в URL, OAuth-вход MCP и пользовательские stdio-команды в этой версии недоступны. [Модель MCP и результаты исследований](https://github.com/flinbein/pappai/blob/master/docs/dev/runners/mcp.md)
+| Connection | Effective network permission required at launch |
+|---|---|
+| APP endpoint in `mcp.servers` | The APP allows network access. |
+| Selected endpoint in `mcp.profile` | Both the APP and its assigned PROFILE allow network access for this APP. |
 
-## Разработка и публикация
+The runner omits denied endpoints and their credentials before Codex initializes. Servers enabled together must have distinct names. A suppressed PROFILE entry never supplies credentials to an APP endpoint, even when their names match. Controllers that omit the `profileMcpNetwork` grant can still supply APP endpoints subject to the network permission they dispatch. Upgrade the controller and runner together for the full permission model.
 
-Выполните `npm ci --ignore-scripts` и `npm test`. Для тестов на Linux подготовьте доступный текущему пользователю каталог `/run/pappai/private`. Для проверки с настоящим CLI задайте `PAPPAI_TEST_CODEX_CLI` с абсолютным путём к нативному исполняемому файлу; в Linux для этой проверки требуется bubblewrap. Проверка установленного npm-архива через настоящий контроллер находится в [pappai](https://github.com/flinbein/pappai/blob/master/tests/codex-package.test.ts).
+External endpoints require HTTPS. Loopback tests may use HTTP on `127.0.0.1` or `[::1]`. URLs cannot include credentials, a query, or a fragment. The runner supports HTTP endpoints only. MCP OAuth login, stdio commands, and raw Codex configuration for managed servers are unsupported. [MCP design and protocol probes](https://github.com/flinbein/pappai/blob/master/docs/dev/runners/mcp.md)
 
-Каждый push в `master` запускает тесты и публикацию в публичный npm registry. Номер patch увеличивается на номер запуска workflow минус один. Повторный запуск уже опубликованной сборки сверяет контрольную сумму архива. Первый запуск серии `0.1` использует версию `0.1.0`.
+## Development and publishing
 
-В настройках npm Trusted Publisher укажите GitHub, владельца `flinbein`, репозиторий `pappai-runner-codex`, файл `publish.yml` и разрешите прямую публикацию (`npm publish`). Для создания пакета владелец scope может один раз опубликовать проверенный архив локально, войдя через браузер, или сохранить краткосрочный granular token как Actions secret `NPM_TOKEN`. После настройки OIDC секрет можно удалить. [Настройка в npm](https://docs.npmjs.com/trusted-publishers/)
+Run `npm ci --ignore-scripts` and `npm test`. On Linux, create `/run/pappai/private` with write access for the test user. To run tests with the real CLI, set `PAPPAI_TEST_CODEX_CLI` to the absolute path of the native executable. Linux integration tests require bubblewrap. The [controller acceptance test](https://github.com/flinbein/pappai/blob/master/tests/codex-package.test.ts) exercises the installed npm archive through pappai.
+
+Each push to `master` runs the tests and publishes to the public npm registry. The workflow adds its run number minus one to the base patch version. Re-running a published build verifies the archive checksum. The first build of the `0.1` series uses version `0.1.0`.
+
+In npm Trusted Publisher settings, choose GitHub, owner `flinbein`, repository `pappai-runner-codex`, and workflow `publish.yml`. Enable direct publication (`npm publish`). To create the package, the scope owner can publish the verified archive locally after signing in through the browser, or supply a short-lived granular token through the Actions secret `NPM_TOKEN`. Remove the secret once OIDC publishing is configured. [npm trusted publisher setup](https://docs.npmjs.com/trusted-publishers/)

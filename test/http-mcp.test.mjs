@@ -13,7 +13,7 @@ test('layers select only explicit servers. Network revocation removes HTTP and i
   t.after(()=>rm(profilesDir,{recursive:true,force:true}));
   const config={profilesDir};
   const profileId=randomUUID();
-  const job={profileId,sandbox:{network:true},settings:{mcp:{profile:['tasks'],servers:{calendar:{url:'https://calendar.example.test/mcp'}}}}};
+  const job={profileId,sandbox:{network:true},profileMcpNetwork:true,settings:{mcp:{profile:['tasks'],servers:{calendar:{url:'https://calendar.example.test/mcp'}}}}};
   let result=await mcpMethod(config,profileId,'mcp.set',{name:'tasks',url:'https://tasks.example.test/api',bearerFile:'/tmp/fixture'},async()=>Buffer.from('fixture-bearer'));
   assert.deepEqual(result,{});
   const listed=await mcpMethod(config,profileId,'mcp.get',{});
@@ -23,7 +23,17 @@ test('layers select only explicit servers. Network revocation removes HTTP and i
   assert.match(resolved.requirementsToml,/calendar.example.test/);
   assert.ok(!resolved.requirementsToml.includes('fixture-bearer'));
   assert.deepEqual(await resolveHttpMcp(config,{...job,sandbox:{network:false}}),{configToml:'',requirementsToml:'[mcp_servers]\n'});
+  assert.deepEqual(await resolveHttpMcp(config,{...job,sandbox:undefined}),{configToml:'',requirementsToml:'[mcp_servers]\n'});
   await assert.rejects(resolveHttpMcp(config,{...job,settings:{mcp:{profile:['tasks'],servers:{tasks:{url:'https://other.example.test'}}}}}),/duplicate/i);
+  for (const profileMcpNetwork of [false, undefined, 'true']) {
+    const localOnly = await resolveHttpMcp(config, {...job, sandbox:null, profileMcpNetwork});
+    assert.match(localOnly.configToml,/calendar\.example\.test/);
+    assert.doesNotMatch(JSON.stringify(localOnly),/tasks|fixture-bearer|Authorization/);
+    const collision = await resolveHttpMcp(config, {...job, profileMcpNetwork,
+      settings:{mcp:{profile:['tasks','unknown'], servers:{tasks:{url:'https://local.example.test'}}}}});
+    assert.match(collision.configToml,/local\.example\.test/);
+    assert.doesNotMatch(JSON.stringify(collision),/tasks\.example|fixture-bearer|Authorization/);
+  }
   await mcpMethod(config,profileId,'mcp.set',{name:'tasks',url:'https://new.example.test/mcp'});
   assert.ok(!(await resolveHttpMcp(config,job)).configToml.includes('fixture-bearer'));
   await mcpMethod(config,profileId,'mcp.delete',{name:'tasks'});

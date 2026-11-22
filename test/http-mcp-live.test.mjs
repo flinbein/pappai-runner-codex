@@ -12,7 +12,7 @@ import { profileMethod } from '../src/profile.mjs';
 async function endpoint(name,bearer) {
   const requests=[];
   const http=createServer(async (req,res)=>{
-    requests.push(req.method);
+    requests.push({method:req.method,authorization:req.headers.authorization});
     if (req.method!=='POST') {res.writeHead(405).end(); return;}
     if (bearer && req.headers.authorization!=='Bearer '+bearer) {res.writeHead(403).end(); return;}
     const chunks=[];
@@ -47,22 +47,27 @@ test('real app-server enforces per-worker HTTP MCP selection and uses only the s
   const shared=await endpoint('shared',bearer), local=await endpoint('local');
   t.after(shared.close); t.after(local.close);
   await profileMethod(config,profileId,'mcp.set',{name:'shared',url:shared.url,bearerFile:'/tmp/test-token'},async()=>Buffer.from(bearer));
-  for (const network of [true,false]) {
+  for (const [network,profileMcpNetwork] of [[true,true],[true,false],[false,true],[false,false]]) {
     shared.requests.length=0; local.requests.length=0;
-    const options=await prepareWorker(config,{profileId,appId:randomUUID(),mode:'oneShot',sandbox:{network},
-      settings:{mcp:{profile:['shared'],servers:{local:{url:local.url}}}}});
+    const localName = profileMcpNetwork ? 'local' : 'shared';
+    const options=await prepareWorker(config,{profileId,appId:randomUUID(),mode:'oneShot',sandbox:{network},profileMcpNetwork,
+      settings:{config:{mcp_servers:{raw:{command:'/unavailable'}}},mcp:{profile:['shared'],servers:{[localName]:{url:local.url}}}}});
     const client=new AppServer(options,()=>{});
     try {
       await client.initialize();
       const {thread}=await client.rpc('thread/start',{...options.threadParams,ephemeral:true,model:'gpt-5.4'});
       const {data}=await client.rpc('mcpServerStatus/list',{threadId:thread.id});
-      assert.deepEqual(data.filter(v=>Object.keys(v.tools??{}).length).map(v=>v.name).sort(),network?['local','shared']:[]);
-      if (network) for(const name of ['local','shared']) {
-        const result=await client.rpc('mcpServer/tool/call',{threadId:thread.id,server:name,tool:name,arguments:{}});
-        assert.equal(result.content[0].text,name);
+      const expected = [];
+      if (network) expected.push([localName,'local']);
+      if (network && profileMcpNetwork) expected.push(['shared','shared']);
+      assert.deepEqual(data.map(v=>v.name).sort(),expected.map(([server])=>server).sort());
+      for(const [server,tool] of expected) {
+        const result=await client.rpc('mcpServer/tool/call',{threadId:thread.id,server,tool,arguments:{}});
+        assert.equal(result.content[0].text,tool);
       }
     } finally {await client.close();await options.cleanup();}
-    assert.equal(shared.requests.length>0,network);
+    assert.equal(shared.requests.length>0,network && profileMcpNetwork);
     assert.equal(local.requests.length>0,network);
+    assert.ok(local.requests.every(request=>request.authorization===undefined));
   }
 });
