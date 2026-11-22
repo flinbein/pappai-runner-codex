@@ -1,0 +1,69 @@
+{
+  "run": {
+    "type": "codex",
+    "settings": {
+      "developerInstructions": "Выполни поручение из data.input. Ответь на языке пользователя.",
+      "features": {
+        "agent.execute": {
+          "type": "method",
+          "description": "Выполнить текстовое поручение",
+          "version": "1",
+          "schema": {
+            "input": {
+              "type": "object",
+              "properties": {
+                "input": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "input"
+              ],
+              "additionalProperties": false
+            },
+            "output": {
+              "type": "string"
+            }
+          }
+        },
+        "agent.getHistory": {
+          "type": "method",
+          "version": "1",
+          "description": "Вернуть страницу истории диалога",
+          "schema": {
+            "input": {
+              "type": "object",
+              "properties": {
+                "cursor": {
+                  "type": "string"
+                },
+                "limit": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 20
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "agent.interrupt": {
+          "type": "method",
+          "version": "1",
+          "description": "Прервать активный ход",
+          "schema": {
+            "input": {
+              "type": "object",
+              "additionalProperties": false
+            }
+          }
+        }
+      }
+    }
+  },
+  "executors": {
+    "mode": "persistent",
+    "idleTimeoutMs": 300000
+  }
+}

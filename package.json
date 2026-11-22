@@ -1,0 +1,30 @@
+{
+  "name": "@flinbein/pappai-runner-codex",
+  "version": "0.1.0",
+  "description": "Codex app-server runner for pappai",
+  "type": "module",
+  "main": "./src/index.mjs",
+  "engines": {
+    "node": ">=24.2.0"
+  },
+  "files": [
+    "src/",
+    "examples/",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/flinbein/pappai-runner-codex.git"
+  }
+}

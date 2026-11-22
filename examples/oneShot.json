@@ -1,0 +1,38 @@
+{
+  "run": {
+    "type": "codex",
+    "settings": {
+      "developerInstructions": "Выполни поручение из data.input. Ответь на языке пользователя.",
+      "features": {
+        "agent.execute": {
+          "type": "method",
+          "description": "Выполнить текстовое поручение",
+          "version": "1",
+          "schema": {
+            "input": {
+              "type": "object",
+              "properties": {
+                "input": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "input"
+              ],
+              "additionalProperties": false
+            },
+            "output": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "executors": {
+    "mode": "oneShot",
+    "poolSize": 2,
+    "maxLifetimeMs": 120000
+  }
+}
