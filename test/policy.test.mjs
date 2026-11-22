@@ -8,12 +8,13 @@ import test from 'node:test';
 import { AppServer } from '../src/client.mjs';
 import { prepareWorker, rotateProfile } from '../src/policy.mjs';
 import { sessionAuth } from '../src/session-auth.mjs';
+import { dynamicTools } from '../src/tools.mjs';
 
 test('launch requires a Linux namespace and an explicit profile', async () => {
   await assert.rejects(prepareWorker({}, {}), /Linux bubblewrap|Invalid Codex worker assignment/);
 });
 
-test('isolated CLI authenticates to the model endpoint and does not offer shell, MCP or host tools', {
+test('isolated CLI runs Code Mode with APP tools and resumes its thread', {
   skip: !process.env.PAPPAI_TEST_CODEX_CLI || process.platform !== 'linux', timeout: 45_000,
 }, async t => {
   const privateRoot = '/run/pappai/private';
@@ -26,7 +27,7 @@ test('isolated CLI authenticates to the model endpoint and does not offer shell,
   await mkdir(profileDir, {recursive:true, mode:0o700});
   const token = 'fixture-' + randomUUID();
   await writeFile(join(profileDir, 'auth.json'), JSON.stringify({OPENAI_API_KEY:token}), {mode:0o600});
-  let requestedTools;
+  let requestedTools, codeModeOutput;
   const fixture = createServer(async (req,res) => {
     if (req.url !== '/v1/responses' || req.headers.authorization !== 'Bearer ' + token) {
       res.writeHead(401).end();
@@ -34,13 +35,19 @@ test('isolated CLI authenticates to the model endpoint and does not offer shell,
     }
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
-    requestedTools = JSON.parse(Buffer.concat(chunks)).tools;
-    const message = {type:'message',id:'msg_test',role:'assistant',status:'completed',
+    const request = JSON.parse(Buffer.concat(chunks));
+    const first = requestedTools === undefined;
+    requestedTools = request.tools;
+    if (!first) codeModeOutput = request.input.find(item => item.type === 'custom_tool_call_output')?.output;
+    const item = first ? {type:'custom_tool_call',id:'ct_1',call_id:'call_1',name:'exec',status:'completed',
+      input:'text({names:ALL_TOOLS.map(t=>t.name).sort(),dir:await tools.pappai_dir({}),process:typeof process,fetch:typeof fetch});'}
+      : {type:'message',id:'msg_test',role:'assistant',status:'completed',
       content:[{type:'output_text',text:'ready',annotations:[]}]};
+    const responseId = first ? 'resp_tool' : 'resp_test';
     const events = [
-      {type:'response.created',response:{id:'resp_test'}},
-      {type:'response.output_item.done',output_index:0,item:message},
-      {type:'response.completed',response:{id:'resp_test',usage:{input_tokens:1,output_tokens:1,total_tokens:2}}},
+      {type:'response.created',response:{id:responseId}},
+      {type:'response.output_item.done',output_index:0,item},
+      {type:'response.completed',response:{id:responseId,usage:{input_tokens:1,output_tokens:1,total_tokens:2}}},
     ];
     res.writeHead(200, {'content-type':'text/event-stream'});
     res.end(events.map(event => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join(''));
@@ -53,18 +60,26 @@ test('isolated CLI authenticates to the model endpoint and does not offer shell,
   const job = {profileId, appId:randomUUID(), mode:'persistent', sandbox:{read:['/'],write:['/'],network:true}};
   const options = await prepareWorker(config,job);
   t.after(options.cleanup);
-  const rpc = new AppServer(options, () => {});
+  const rpc = new AppServer(options, () => {}, ({tool,arguments:args}) => {
+    assert.equal(tool, 'pappai_dir');
+    assert.deepEqual(args, {});
+    return {success:true,contentItems:[{type:'inputText',text:'visible-node'}]};
+  });
   let threadId;
   try {
     await rpc.initialize();
-    const {thread} = await rpc.rpc('thread/start', {...options.threadParams, model:'gpt-5.4'});
+    const {thread} = await rpc.rpc('thread/start', {...options.threadParams, model:'gpt-5.4', dynamicTools});
     threadId = thread.id;
     const result = await rpc.turn({threadId:thread.id,input:[{type:'text',text:'Ready?'}]}, () => {});
     assert.equal(result.status, 'completed');
     assert.equal(result.text, 'ready');
     assert.ok(Array.isArray(requestedTools));
     const tools = requestedTools.map(tool => tool.name ?? tool.type);
-    assert.deepEqual(tools.filter(name => !['update_plan','request_user_input'].includes(name)), []);
+    const workspaceTools = dynamicTools.map(tool => tool.name).sort();
+    assert.ok(tools.includes('exec'));
+    assert.deepEqual(tools.filter(name => !['exec','wait','update_plan','request_user_input',...workspaceTools].includes(name)), []);
+    const output = codeModeOutput?.find(part => part.text?.startsWith('{'));
+    assert.deepEqual(JSON.parse(output.text), {names:workspaceTools,dir:'visible-node',process:'undefined',fetch:'undefined'});
   } finally {
     await rpc.close();
   }

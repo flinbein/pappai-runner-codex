@@ -35,7 +35,7 @@ async function privateDir(path) {
   return path;
 }
 
-function configToml(modelBaseUrl) {
+function configToml(modelBaseUrl, codeMode) {
   const lines = [
     'approval_policy="never"', 'default_permissions="pappai"', 'web_search="disabled"',
     'cli_auth_credentials_store="file"', 'mcp_oauth_credentials_store="file"',
@@ -54,7 +54,8 @@ function configToml(modelBaseUrl) {
   return [...lines,
     '[permissions.pappai.filesystem]', '"/work"="read"', '"/state"="deny"', '"/proc"="deny"',
     '[permissions.pappai.network]', 'enabled=false',
-    '[features]', ...['apps','browser_use','browser_use_external','code_mode','code_mode_host',
+    '[features]', `code_mode=${codeMode}`, `code_mode_host=${codeMode}`,
+    ...['apps','browser_use','browser_use_external',
       'computer_use','goals','hooks','image_generation','in_app_browser','memories','multi_agent_v2',
       'plugins','remote_plugin','shell_snapshot','shell_tool','skill_search','unified_exec','view_image',
       'workspace_dependencies'].map(key => `${key}=false`),
@@ -68,19 +69,20 @@ function configToml(modelBaseUrl) {
 async function namespace(config, state, profileOwner, mcp) {
   const binary = await canonicalFile(config.codexExecutablePath, 'Codex executable');
   const bwrap = await canonicalFile(join(dirname(dirname(binary)), 'codex-resources', 'bwrap'), 'bundled Codex bubblewrap');
+  const codeModeHost = profileOwner ? null : await canonicalFile(join(dirname(binary), 'codex-code-mode-host'), 'bundled Codex Code Mode host');
   const mounts = (await readFile('/proc/self/mountinfo', 'utf8')).trim().split('\n').map(line => {
     const fields = line.split(' ');
     const target = fields[4].replace(/\\([0-7]{3})/g, (_, octal) => String.fromCharCode(parseInt(octal, 8)));
     return {target, readonly:fields[5].split(',').includes('ro')};
   });
-  if (![binary,bwrap].every(path => protectedBinary(path,mounts))) {
+  if (![binary,bwrap,...(codeModeHost ? [codeModeHost] : [])].every(path => protectedBinary(path,mounts))) {
     throw Error('Codex distribution must be on a read-only mount or below /run/pappai/private');
   }
   if (typeof config.stateDir !== 'string' || !config.stateDir.startsWith('/run/pappai/private/')) {
     throw new Error('Runner state must be below /run/pappai/private');
   }
   const root = await privateDir(config.stateDir);
-  const toml = configToml(config.modelBaseUrl);
+  const toml = configToml(config.modelBaseUrl, codeModeHost !== null);
   const run = await mkdtemp(join(root, 'run-'));
   const cleanup = () => rm(run, { recursive: true, force: true });
   try {
@@ -96,6 +98,7 @@ async function namespace(config, state, profileOwner, mcp) {
       '--die-with-parent', '--new-session', '--dev', '/dev', '--proc', '/proc', '--tmpfs', '/tmp',
       '--dir', work, '--tmpfs', '/state', '--dir', home, '--dir', '/state/home', '--ro-bind', binary, cliPath,
       '--ro-bind', bwrap, '/opt/codex/bin/bwrap'];
+    if (codeModeHost) args.push('--ro-bind', codeModeHost, '/opt/codex/bin/codex-code-mode-host');
     if (profileOwner) args.push('--bind', dirname(profileOwner.authPath), home);
     args.push('--ro-bind', configFile, home + '/config.toml', '--ro-bind', requirements, '/etc/codex/requirements.toml');
     for (const path of ['/etc/resolv.conf','/etc/hosts','/etc/ssl/certs/ca-certificates.crt']) {
