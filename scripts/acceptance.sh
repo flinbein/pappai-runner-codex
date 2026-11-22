@@ -20,7 +20,7 @@ docker run "${sandbox[@]}" "${cli[@]}" runner-codex-acceptance \
   --dev /dev --proc /proc --ro-bind /native/bin/codex /codex -- /codex --version
 docker run "${sandbox[@]}" "${cli[@]}" -v "$PWD:/runner:ro" -w /runner runner-codex-acceptance \
   sh -ec 'mkdir -p /run/pappai/private && chmod 700 /run/pappai/private && node --test test/*.test.mjs'
-docker run "${sandbox[@]}" "${cli[@]}" -v "$tmp/install/node_modules:/installed:ro" \
+docker run "${sandbox[@]}" "${cli[@]}" -v "$tmp/install/node_modules:/installed/node_modules:ro" \
   -v "$tmp/controller/tests:/opt/pappai/tests:ro" \
-  -e PAPPAI_TEST_CODEX_ENTRYPOINT=/installed/@flinbein/pappai-runner-codex/src/index.mjs \
+  -e PAPPAI_TEST_CODEX_ENTRYPOINT=/installed/node_modules/@flinbein/pappai-runner-codex/src/index.mjs \
   runner-codex-acceptance node --test tests/codex-package.test.ts
