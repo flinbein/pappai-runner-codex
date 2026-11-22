@@ -11,9 +11,13 @@ docker build -t runner-codex-acceptance "$tmp/controller"
 archive=$(npm pack --silent --pack-destination "$tmp" @openai/codex@0.170.0-linux-x64)
 tar -xzf "$tmp/$archive" -C "$tmp"
 npm install --prefix "$tmp/install" --no-audit --no-fund --ignore-scripts "$PWD/artifact/package.tgz"
-sandbox=(--rm --init --network none --cap-add SYS_ADMIN --security-opt seccomp=unconfined --security-opt apparmor=unconfined)
+sandbox=(--rm --init --network none --cap-add SYS_ADMIN --security-opt seccomp=unconfined --security-opt apparmor=unconfined --security-opt systempaths=unconfined)
 native="$tmp/package/vendor/x86_64-unknown-linux-musl"
 cli=(-v "$native:/native:ro" -e PAPPAI_TEST_CODEX_CLI=/native/bin/codex)
+# Surface kernel/mount errors directly before starting an app-server with credentials.
+docker run "${sandbox[@]}" "${cli[@]}" runner-codex-acceptance \
+  bwrap --unshare-all --unshare-user --share-net --cap-drop ALL --die-with-parent \
+  --dev /dev --proc /proc --ro-bind /native/bin/codex /codex -- /codex --version
 docker run "${sandbox[@]}" "${cli[@]}" -v "$PWD:/runner:ro" -w /runner runner-codex-acceptance \
   sh -ec 'mkdir -p /run/pappai/private && chmod 700 /run/pappai/private && node --test test/*.test.mjs'
 docker run "${sandbox[@]}" "${cli[@]}" -v "$tmp/install/node_modules:/installed:ro" \
