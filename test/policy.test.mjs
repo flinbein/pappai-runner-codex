@@ -8,6 +8,7 @@ import test from 'node:test';
 import { AppServer } from '../src/client.mjs';
 import { prepareWorker, rotateProfile } from '../src/policy.mjs';
 import { sessionAuth } from '../src/session-auth.mjs';
+import { upgradeThreadTools } from '../scripts/upgrade-thread-tools.mjs';
 import { dynamicTools } from '../src/tools.mjs';
 
 test('launch requires a Linux namespace and an explicit profile', async () => {
@@ -27,7 +28,7 @@ test('isolated CLI runs Code Mode with APP tools and resumes its thread', {
   await mkdir(profileDir, {recursive:true, mode:0o700});
   const token = 'fixture-' + randomUUID();
   await writeFile(join(profileDir, 'auth.json'), JSON.stringify({OPENAI_API_KEY:token}), {mode:0o600});
-  let requestedTools, codeModeOutput;
+  let requestedTools, codeModeOutput, upgrading = true;
   const fixture = createServer(async (req,res) => {
     if (req.url !== '/v1/responses' || req.headers.authorization !== 'Bearer ' + token) {
       res.writeHead(401).end();
@@ -36,11 +37,11 @@ test('isolated CLI runs Code Mode with APP tools and resumes its thread', {
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
     const request = JSON.parse(Buffer.concat(chunks));
-    const first = requestedTools === undefined;
-    requestedTools = request.tools;
+    const first = !upgrading && requestedTools === undefined;
+    if (!upgrading) requestedTools = request.tools;
     if (!first) codeModeOutput = request.input.find(item => item.type === 'custom_tool_call_output')?.output;
     const item = first ? {type:'custom_tool_call',id:'ct_1',call_id:'call_1',name:'exec',status:'completed',
-      input:'text({names:ALL_TOOLS.map(t=>t.name).sort(),dir:await tools.pappai_dir({}),process:typeof process,fetch:typeof fetch});'}
+      input:'text({names:ALL_TOOLS.map(t=>t.name).sort(),dir:await tools.pappai_discover({}),process:typeof process,fetch:typeof fetch});'}
       : {type:'message',id:'msg_test',role:'assistant',status:'completed',
       content:[{type:'output_text',text:'ready',annotations:[]}]};
     const responseId = first ? 'resp_tool' : 'resp_test';
@@ -60,16 +61,29 @@ test('isolated CLI runs Code Mode with APP tools and resumes its thread', {
   const job = {profileId, appId:randomUUID(), mode:'persistent', sandbox:{read:['/'],write:['/'],network:true}};
   const options = await prepareWorker(config,job);
   t.after(options.cleanup);
+  const initial = new AppServer(options, () => {});
+  let threadId;
+  try {
+    await initial.initialize();
+    const legacy = dynamicTools.map(tool => tool.name === 'pappai_discover' ? {...tool,name:'pappai_dir'} : tool);
+    const {thread} = await initial.rpc('thread/start', {...options.threadParams, model:'gpt-5.4', dynamicTools:legacy});
+    threadId = thread.id;
+    const result = await initial.turn({threadId,input:[{type:'text',text:'Before upgrade'}]}, () => {});
+    assert.equal(result.status,'completed');
+  } finally { await initial.close(); }
+  const state = join(options.stateFile,'..');
+  assert.equal(await upgradeThreadTools(state),1);
+  assert.equal(await upgradeThreadTools(state),0);
+  upgrading = false;
   const rpc = new AppServer(options, () => {}, ({tool,arguments:args}) => {
-    assert.equal(tool, 'pappai_dir');
+    assert.equal(tool, 'pappai_discover');
     assert.deepEqual(args, {});
     return {success:true,contentItems:[{type:'inputText',text:'visible-node'}]};
   });
-  let threadId;
   try {
     await rpc.initialize();
-    const {thread} = await rpc.rpc('thread/start', {...options.threadParams, model:'gpt-5.4', dynamicTools});
-    threadId = thread.id;
+    const {thread} = await rpc.rpc('thread/resume', {...options.threadParams, threadId});
+    assert.match(JSON.stringify(thread.turns), /Before upgrade/);
     const result = await rpc.turn({threadId:thread.id,input:[{type:'text',text:'Ready?'}]}, () => {});
     assert.equal(result.status, 'completed');
     assert.equal(result.text, 'ready');

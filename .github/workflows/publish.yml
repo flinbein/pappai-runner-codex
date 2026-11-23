@@ -30,7 +30,7 @@ jobs:
       - run: npm publish ./artifact/package.tgz --dry-run --ignore-scripts --access public
       - name: Exercise the packed runner on Linux with a pinned Codex CLI
         env:
-          PAPPAI_REVISION: 5c6ca1e0b42e84eb3571b7be9a3edc52c2594812
+          PAPPAI_REVISION: b63e54a00f7ff6dfe76f406edee7c500cbf8f289
         run: bash scripts/acceptance.sh
       - name: Save the tested archive
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

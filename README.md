@@ -28,6 +28,8 @@ Find the installed entry point with `$.runners.get({})` on the workspace. Wait f
 
 Call `$.runners.restart({"name":"codex"})` on the workspace to load the installed package with its saved configuration. Restart affects all active Codex workers. Use the same procedure with the previous package version to roll back.
 
+When upgrading a persistent session from the `pappai_dir` tool on Codex CLI 0.170.0, stop the controller, back up the runner state directory and run `node <installed-package>/scripts/upgrade-thread-tools.mjs <app-state>` for each persistent APP state directory before starting the new controller. Codex stores dynamic tool definitions at thread creation. The script updates the discovery name and help signature in stored rollout metadata and the SQLite index. It replaces each rollout atomically, preserving all conversation records after the header. A repeated invocation reports zero updates. Restore the backup if rolling back both packages. Fresh installations and one-shot APPs can skip this step.
+
 ## First call
 
 1. Call `$.profile.create` on the workspace or a TEAM with a name and permissions. Save the returned ID.
@@ -44,9 +46,9 @@ A persistent APP can also declare `agent.getHistory` and `agent.interrupt` under
 
 ## Executor permissions
 
-The executor runs in an isolated directory. Its connection to the model is a service channel. For workspace operations, the model receives the `pappai_dir`, `pappai_help`, `pappai_call` and `pappai_publish` tools. The controller authorizes calls as the assigned APP using its effective permissions. The PROFILE supplies the model credentials, and its scope controls which APPs may use them.
+The executor runs in an isolated directory. Its connection to the model is a service channel. For workspace operations, the model receives the `pappai_discover`, `pappai_help`, `pappai_call` and `pappai_publish` tools. Use `pappai_help({node, features:true})` to list the full catalog. Omit `features` for the top level, or select names and request `doc:true` and `schema:true` for details. Each entry has a type and version. The controller authorizes calls as the assigned APP using its effective permissions. The PROFILE supplies the model credentials, and its scope controls which APPs may use them.
 
-Workers support Code Mode. For example, `functions.exec` can run `text(await tools.pappai_dir({}))`. Keep the native `bin/codex-code-mode-host` beside `bin/codex` in the trusted CLI distribution. The runner mounts that helper read-only for APP workers. The separate credential refresh process keeps Code Mode disabled. The helper shares the app-server's network namespace. The JavaScript environment exposes the selected tools, and nested pappai calls undergo the usual controller permission checks.
+Workers support Code Mode. For example, `functions.exec` can run `text(await tools.pappai_discover({}))`. Keep the native `bin/codex-code-mode-host` beside `bin/codex` in the trusted CLI distribution. The runner mounts that helper read-only for APP workers. The separate credential refresh process keeps Code Mode disabled. The helper shares the app-server's network namespace. The JavaScript environment exposes the selected tools, and nested pappai calls undergo the usual controller permission checks.
 
 Shell, native Codex file tools and user configuration from the working directory are disabled. Use `run.settings` to select the model, reasoning effort and developer instructions. The administrator sets the CLI and storage paths when registering the runner.
 

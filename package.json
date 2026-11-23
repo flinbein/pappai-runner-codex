@@ -9,6 +9,7 @@
   },
   "files": [
     "src/",
+    "scripts/upgrade-thread-tools.mjs",
     "examples/",
     "README.md"
   ],
