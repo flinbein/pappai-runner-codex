@@ -1,6 +1,7 @@
 import { RunnerHost } from './host.mjs'
 import { prepareWorker } from './policy.mjs'
 import { attachProfileMethods } from './profile.mjs'
+import { prepareProfileCli, profileCli } from './profile-cli.mjs'
 import { join } from 'node:path'
 import { CodexInstallation, runnerMethods } from './installation.mjs'
 import settingsSchema from '../examples/settings-schema.json' with {type:'json'}
@@ -24,6 +25,10 @@ const host = new RunnerHost(config,async (config,job) => {
 },send)
 async function runnerCall({id,method,data}) {
   try {
+    if (method==='@cli.prepare') {
+      const result=await prepareProfileCli(data,installation,config.runnerName)
+      return send('runnerReply',{id,result})
+    }
     if (!Object.hasOwn(runnerMethods,method)) throw Error('Unknown runner method')
     if (!data || typeof data!=='object' || Array.isArray(data) ||
         Object.keys(data).some(key=>method!=='installCodex' || key!=='version')) throw Error('Invalid runner method arguments')
@@ -43,6 +48,6 @@ process.on('message', message => {
 process.on('disconnect',close)
 process.on('SIGTERM',close)
 process.on('SIGINT',close)
-send('runnerReady',{kind:'codex',settingsSchema,methods:runnerMethods})
+send('runnerReady',{kind:'codex',settingsSchema,methods:runnerMethods,profileCli})
 attachProfileMethods(config)
 void installation.start().catch(()=>{}) // getVersion and waiting workers expose the issue

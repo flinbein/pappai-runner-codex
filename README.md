@@ -46,12 +46,14 @@ When upgrading a persistent session from the `pappai_dir` tool on Codex CLI 0.17
 ## First call
 
 1. Call `$.profile.create` on the workspace or a TEAM with a name and permissions. Save the returned ID.
-2. Sign in with the Codex CLI and place the resulting `auth.json` in a directory the caller can read. Call `codex.setup` on the PROFILE with `{"authFile":"/tmp/codex-auth.json"}`. The controller reads the regular file as the caller. After import, `codex.status({})` returns `{"configured":true}`. Use `codex.remove({})` to remove the stored connection.
+2. In the USER web terminal, run `pappai cli PROFILE_ID codex.authorize '{}'`. Open the verification URL and enter the device code in your browser. The selected Codex CLI runs in a temporary home. After sign-in, the helper calls `codex.setup` with the path to the new credentials and displays the result of `codex.status`. The USER needs network access and permission to run the command and call both methods. If you cancel during login, the PROFILE keeps its existing connection. Substitute the registration name for `codex` if needed.
 3. Call `$.app.create` on the workspace or a TEAM with `name`, `profile`, `permissions` and `source.manifest`. Use the [one-shot](examples/oneShot.json) or [persistent](examples/persistent.json) manifest.
 4. Call `$.profile.scope.set({"scope":["APP_ID"]})` on the PROFILE using the new APP's ID, then call `$.profile.enable({})`. Call `$.app.start({})` on the APP.
 5. Call `agent.execute` on the APP with `{"input":"Translate into Russian: the build passed"}`. The example method declares a string result. You can declare a different output JSON Schema for your own method. The runner validates the result before replying.
 
 The controller checks assignment access before an event reaches the model. Each executor obtains model credentials from its assigned profile at startup. APPs that share a profile keep separate conversation histories. Set `idleTimeoutMs` on a persistent APP to release its process between assignments.
+
+For a manual import, place a Codex `auth.json` in a directory the caller can read and call `codex.setup` on the PROFILE with `{"authFile":"/tmp/codex-auth.json"}`. The controller reads the regular file as the caller. Use `codex.status({})` to check the connection and `codex.remove({})` to remove it.
 
 The runner supports API keys and imported ChatGPT subscription credentials. Each installation stores its connection at `profiles/<profileId>/<runnerName>/` and coordinates token refresh across its APPs. The default installation named `codex` keeps its existing history under `state/`. Other installations keep their history under `state/instances/<runnerName>/`. Each subscription worker receives only short-lived credentials. The rotation test uses the native Codex CLI and a local OAuth test server.
 

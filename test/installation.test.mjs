@@ -75,8 +75,10 @@ test('workers wait for bootstrap, then keep using the active CLI while an update
 });
 
 test('the host announces methods and replies during bootstrap', {timeout:10000}, async t => {
+  const native=process.env.PAPPAI_TEST_CODEX_CLI;
   const child = fork(new URL('../src/index.mjs',import.meta.url),[],{
-    env:{...process.env,PAPPAI_RUNNER_DIR:'',PAPPAI_RUNNER_CONFIG:'{}'},stdio:['ignore','ignore','inherit','ipc'],
+    env:{...process.env,PAPPAI_RUNNER_DIR:'',PAPPAI_RUNNER_CONFIG:JSON.stringify({codexExecutablePath:native}),
+      PAPPAI_RUNNER_NAME:'second'},stdio:['ignore','ignore','inherit','ipc'],
   });
   t.after(() => child.kill());
   const ready = await new Promise((resolve,reject) => {
@@ -86,7 +88,24 @@ test('the host announces methods and replies during bootstrap', {timeout:10000},
   assert.equal(ready.kind,'codex');
   assert.equal(ready.settingsSchema.type,'object');
   assert.deepEqual(Object.keys(ready.methods).sort(),['getVersion','installCodex']);
-  const reply=new Promise(resolve=>child.on('message',msg=>{if(msg.type==='runnerReply')resolve(msg.payload);}));
-  child.send({type:'runnerCall',id:'request',method:'getVersion',data:{}});
-  assert.equal((await reply).id,'request');
+  assert.equal(ready.profileCli.authorize.version,'1');
+  assert.deepEqual(ready.profileCli.authorize.schema.input,{type:'object',properties:{},additionalProperties:false});
+  function call(method,data) {
+    return new Promise(resolve => {
+      const receive = msg => {
+        if (msg.type !== 'runnerReply' || msg.payload.id !== method) return;
+        child.off('message',receive);
+        resolve(msg.payload);
+      };
+      child.on('message',receive);
+      child.send({type:'runnerCall',id:method,method,data});
+    });
+  }
+  assert.equal((await call('getVersion',{})).id,'getVersion');
+  assert.match((await call('@cli.prepare',{})).error,/Invalid PROFILE/);
+  if (native) {
+    const {result} = await call('@cli.prepare',{feature:'authorize',node:'profile-id',input:{}});
+    assert.equal(result.files[1],native);
+    assert.deepEqual(result.argv.slice(-2),['profile-id','second']);
+  }
 });
