@@ -4,11 +4,22 @@ This external runner delivers [pappai](https://github.com/flinbein/pappai) event
 
 ## Installation
 
-The runner requires a pappai controller that supports PROFILE nodes and administrator-supplied runner configuration, Linux x86_64 with working bubblewrap, Node.js 24.2+, and the native musl distribution of the Codex CLI. Compatibility tests use Codex `0.170.0`. Install the CLI separately on a persistent volume. Set `codexExecutablePath` to the executable itself.
+In the pappai workspace, choose **Add runner → npm**, enter `@flinbein/pappai-runner-codex`, and give the installation a name, such as `codex`. The host requires Linux x86_64, bubblewrap, npm, Node.js 24.2+ and a persistent private volume at `/run/pappai/private`.
 
-1. Mount a persistent private volume at `/run/pappai/private`. Create `profiles` and `state` directories there, owned by the pappai process user with mode `0700`. Only the administrator should have write access to the runner code and CLI installation.
-2. Install the package, for example with `npm install --prefix /run/pappai/private/runners --omit=dev @flinbein/pappai-runner-codex`.
-3. Use `call` to invoke `$.runners.add` on the workspace (`node: "~"`) with the following arguments. To have the controller validate APP settings, supply the [settings schema](examples/settings-schema.json) in the `settingsSchema` field when registering the runner.
+On first start the runner downloads the latest stable native Linux musl distribution from the public npm registry and verifies its executable version. It keeps each CLI release and the selected version in `/run/pappai/private/runners/<name>/tools/`. A restart uses the selected version offline. The runner publishes its [APP settings schema](examples/settings-schema.json) when it starts.
+
+Administrators can call these methods on the workspace (`~`). Substitute the installation name for `codex`.
+
+| Method | Arguments | Result |
+| --- | --- | --- |
+| `runners.codex.getVersion` | `{}` | Active CLI version, installation status and source |
+| `runners.codex.installCodex` | `{}` or `{"version":"0.172.0"}` | Resolve the latest stable version or select the exact stable version, then return its status |
+
+For example, `{"source":"managed","version":"0.172.0","status":"ready"}` means new executors will use that release. During the first installation, the status is `installing` and the version is `null`. New workers wait for the CLI. Existing executors keep using their launch version after an update. A failed update preserves the active release and exposes an `error` through `getVersion`. To roll back, select a previously installed version.
+
+### Existing installations
+
+Controllers with an existing manual registration continue to use its saved paths. For example, the following registration was supported by earlier controllers. Its externally installed CLI reports `"source":"configured"` in workspace settings on controllers that support runner methods.
 
 ```json
 {
@@ -24,7 +35,9 @@ The runner requires a pappai controller that supports PROFILE nodes and administ
 
 ## Updating an existing registration
 
-Find the installed entry point with `$.runners.get({})` on the workspace. Wait for active Codex turns to finish, then use the administrator terminal to install the desired package version under the same npm prefix as the registered entry point. For example, for an entry point under `/run/pappai/private/runners/node_modules/`, use `npm install --prefix /run/pappai/private/runners --omit=dev --ignore-scripts --save-exact @flinbein/pappai-runner-codex@VERSION`. Replace `VERSION` with the release number.
+Updating the runner package and updating the Codex CLI are separate operations. In a managed installation, select the new runner release through workspace settings. The controller activates its entry point with `$.runners.restart({name,entrypoint})`. CLI selection, stored profile connections, and APP history persist across runner package updates.
+
+For a manually installed runner, find its entry point with `$.runners.get({})` on the workspace. Wait for active Codex turns to finish, then use the administrator terminal to install the desired package version under the same npm prefix as the registered entry point. For example, for an entry point under `/run/pappai/private/runners/node_modules/`, use `npm install --prefix /run/pappai/private/runners --omit=dev --ignore-scripts --save-exact @flinbein/pappai-runner-codex@VERSION`. Replace `VERSION` with the release number.
 
 Call `$.runners.restart({"name":"codex"})` on the workspace to load the installed package with its saved configuration. Restart affects all active Codex workers. Use the same procedure with the previous package version to roll back.
 
@@ -40,7 +53,7 @@ When upgrading a persistent session from the `pappai_dir` tool on Codex CLI 0.17
 
 The controller checks assignment access before an event reaches the model. Each executor obtains model credentials from its assigned profile at startup. APPs that share a profile keep separate conversation histories. Set `idleTimeoutMs` on a persistent APP to release its process between assignments.
 
-The runner supports API keys and imported ChatGPT subscription credentials. A single runner host owns the profiles directory and coordinates token refresh across its APPs. Each subscription worker receives only short-lived credentials. Give each runner host exclusive use of its profile storage. The rotation test uses the native Codex CLI and a local OAuth test server.
+The runner supports API keys and imported ChatGPT subscription credentials. Each installation stores its connection at `profiles/<profileId>/<runnerName>/` and coordinates token refresh across its APPs. The default installation named `codex` keeps its existing history under `state/`. Other installations keep their history under `state/instances/<runnerName>/`. Each subscription worker receives only short-lived credentials. The rotation test uses the native Codex CLI and a local OAuth test server.
 
 A persistent APP can also declare `agent.getHistory` and `agent.interrupt` under `features`. History returns user messages and final assistant replies with a pagination cursor. Interrupt targets the active turn and requires permission to call the method. If no turn is active, the controller returns an error. Both methods run without a model call.
 
@@ -50,7 +63,7 @@ The executor runs in an isolated directory. Its connection to the model is a ser
 
 Workers support Code Mode. For example, `functions.exec` can run `text(await tools.pappai_discover({}))`. Keep the native `bin/codex-code-mode-host` beside `bin/codex` in the trusted CLI distribution. The runner mounts that helper read-only for APP workers. The separate credential refresh process keeps Code Mode disabled. The helper shares the app-server's network namespace. The JavaScript environment exposes the selected tools, and nested pappai calls undergo the usual controller permission checks.
 
-Shell, native Codex file tools and user configuration from the working directory are disabled. Use `run.settings` to select the model, reasoning effort and developer instructions. The administrator sets the CLI and storage paths when registering the runner.
+Shell, native Codex file tools and user configuration from the working directory are disabled. Use `run.settings` to select the model, reasoning effort and developer instructions.
 
 ## HTTP MCP
 

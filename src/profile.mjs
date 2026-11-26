@@ -11,7 +11,7 @@ const profileOperations = new Map();
 // The controller gives one runner host ownership of its profile storage. Configure,
 // remove, and native token rotation share the same queue, including errors.
 export function withProfileLock(config, id, work) {
-  const key = JSON.stringify([config.profilesDir ?? process.env.PAPPAI_PROFILES_DIR, id]);
+  const key = JSON.stringify([config.profilesDir ?? process.env.PAPPAI_PROFILES_DIR, id, config.runnerName ?? 'codex']);
   const previous = profileOperations.get(key) ?? Promise.resolve();
   const operation = previous.then(work);
   const settled = operation.catch(() => {});
@@ -25,10 +25,12 @@ async function directory(config, id, create) {
   if (typeof root !== 'string' || !isAbsolute(root) || root !== resolve(root)) throw Error('Invalid profiles directory');
   if (process.platform === 'linux' && !root.startsWith('/run/pappai/private/')) throw Error('Profiles must use the private mount');
   if (typeof id !== 'string' || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id)) throw Error('Invalid profile ID');
-  // The operator provisions the canonical root. Never follow a tenant-chosen link.
+  if (create) await mkdir(root,{recursive:true,mode:0o700});
   if (await realpath(root) !== root) throw Error('Invalid profiles directory');
   let dir = root;
-  for (const part of [id,'codex']) {
+  const name = config.runnerName ?? 'codex';
+  if (!/^[a-z][a-z0-9_-]{0,63}$/.test(name)) throw Error('Invalid runner name');
+  for (const part of [id,name]) {
     dir = join(dir,part);
     if (create) {
       try { await mkdir(dir,{mode:0o700}); }
@@ -69,7 +71,7 @@ async function runProfileMethod(config, id, method, data, reader) {
   if (method==='remove') {
     try {
       const dir=await directory(config,id,false);
-      const retired=join(dir,'..','codex-removed-'+randomUUID());
+      const retired=join(dir,'..','.removed-'+randomUUID());
       await rename(dir,retired);
       await rm(retired,{recursive:true,force:true});
     }
@@ -91,8 +93,7 @@ async function runProfileMethod(config, id, method, data, reader) {
   return {configured:true};
 }
 
-export function attachProfileMethods() {
-  const config=JSON.parse(process.env.PAPPAI_RUNNER_CONFIG || '{}');
+export function attachProfileMethods(config) {
   const requests=new Map();
   const send=(type,payload)=>{ if (process.connected) process.send({type,payload},()=>{}); };
   function read(id,path) {

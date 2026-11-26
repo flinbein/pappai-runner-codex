@@ -16,6 +16,10 @@ test('authorize source through the active call, retain working credentials on in
   assert.deepEqual(await call('setup',{authFile:'/tmp/input'},async path=>{assert.equal(path,'/tmp/input');return bytes;}),{configured:true});
   const file=await profileAuthPath(cfg,id);
   assert.deepEqual(await readFile(file),bytes);
+  const alias={profilesDir,runnerName:'second-codex'};
+  assert.deepEqual(await profileMethod(alias,id,'status',{}),{configured:false});
+  await profileMethod(alias,id,'setup',{authFile:'/tmp/input'},async()=>bytes);
+  assert.equal(await profileAuthPath(alias,id),join(profilesDir,id,'second-codex','auth.json'));
   if (process.platform!=='win32') assert.equal((await stat(file)).mode & 0o777,0o600);
   await assert.rejects(call('setup',{authFile:'/tmp/input'},async()=>Buffer.from('{}')),/credential/i);
   await assert.rejects(call('setup',{authFile:'/tmp/input'},async()=>{throw Error('Permission denied');}),/denied/);
@@ -24,5 +28,6 @@ test('authorize source through the active call, retain working credentials on in
   assert.deepEqual(await call('remove'),{configured:false});
   assert.deepEqual(await call('mcp.get'),{});
   assert.deepEqual(await call('status'),{configured:false});
+  assert.deepEqual(await profileMethod(alias,id,'status',{}),{configured:true});
   await assert.rejects(profileAuthPath(cfg,'../../outside'));
 });

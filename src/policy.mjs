@@ -66,18 +66,24 @@ function configToml(modelBaseUrl, codeMode) {
 
 // Only the administrator supplies config. The APP cannot add mounts, a cwd, environment,
 // config layers, or executable arguments. Personal state and installer files are never mounted.
-async function namespace(config, state, profileOwner, mcp) {
-  const binary = await canonicalFile(config.codexExecutablePath, 'Codex executable');
+export async function trustedDistribution(path) {
+  const binary = await canonicalFile(path, 'Codex executable');
   const bwrap = await canonicalFile(join(dirname(dirname(binary)), 'codex-resources', 'bwrap'), 'bundled Codex bubblewrap');
-  const codeModeHost = profileOwner ? null : await canonicalFile(join(dirname(binary), 'codex-code-mode-host'), 'bundled Codex Code Mode host');
+  const codeModeHost = await canonicalFile(join(dirname(binary), 'codex-code-mode-host'), 'bundled Codex Code Mode host');
   const mounts = (await readFile('/proc/self/mountinfo', 'utf8')).trim().split('\n').map(line => {
     const fields = line.split(' ');
     const target = fields[4].replace(/\\([0-7]{3})/g, (_, octal) => String.fromCharCode(parseInt(octal, 8)));
     return {target, readonly:fields[5].split(',').includes('ro')};
   });
-  if (![binary,bwrap,...(codeModeHost ? [codeModeHost] : [])].every(path => protectedBinary(path,mounts))) {
+  if (![binary,bwrap,codeModeHost].every(path => protectedBinary(path,mounts))) {
     throw Error('Codex distribution must be on a read-only mount or below /run/pappai/private');
   }
+  return {binary,bwrap,codeModeHost};
+}
+
+async function namespace(config, state, profileOwner, mcp) {
+  const {binary,bwrap,codeModeHost:helper} = await trustedDistribution(config.codexExecutablePath);
+  const codeModeHost = profileOwner ? null : helper;
   if (typeof config.stateDir !== 'string' || !config.stateDir.startsWith('/run/pappai/private/')) {
     throw new Error('Runner state must be below /run/pappai/private');
   }

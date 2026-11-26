@@ -149,7 +149,7 @@ export class AppServer {
     const {userAgent} = await this.rpc('initialize',{
       clientInfo:{name:'pappai_runner_codex',version:'1'},capabilities:{experimentalApi:true},
     })
-    if (typeof userAgent !== 'string' || !/\/0\.170\.0(?:\s|$)/.test(userAgent)) throw Error('Codex CLI 0.170.0 is required')
+    if (typeof userAgent !== 'string' || !userAgent) throw Error('Invalid Codex app-server initialization')
     this.#send({method:'initialized'})
     if (!readAccount) return
     if (this.#auth) {
